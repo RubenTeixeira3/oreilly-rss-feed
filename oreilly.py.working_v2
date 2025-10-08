@@ -1,0 +1,70 @@
+import requests
+import xml.etree.ElementTree as ET
+from datetime import datetime
+import html
+
+# ==== CONFIGURATION ====
+API_TOKEN = "a1ebd30b7f54441685e7e67"
+SEARCH_QUERY = "software development"
+LIMIT = 10
+OUTPUT_FILE = "oreilly_courses.xml"
+# ========================
+
+headers = {
+    "Authorization": f"Token {API_TOKEN}",
+    "Accept": "application/json"
+}
+
+# 1️⃣ Fetch courses directly
+url = f"https://learning.oreilly.com/api/v1/search/?query={SEARCH_QUERY}&type=course&limit={LIMIT}"
+response = requests.get(url, headers=headers)
+data = response.json()
+
+# 2️⃣ Build RSS feed
+rss = ET.Element("rss", version="2.0")
+channel = ET.SubElement(rss, "channel")
+ET.SubElement(channel, "title").text = "O'Reilly Developer Courses"
+ET.SubElement(channel, "link").text = "https://learning.oreilly.com/"
+ET.SubElement(channel, "description").text = "Latest developer courses from O'Reilly"
+ET.SubElement(channel, "lastBuildDate").text = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+
+# 3️⃣ Add available metadata per course
+for item in data.get("results", []):
+    entry = ET.SubElement(channel, "item")
+
+    title = item.get("title", "No title")
+    link = item.get("web_url", item.get("url", ""))
+    desc = item.get("description", "No description available")
+
+    # Try to extract richer fields (not always present)
+    authors = ", ".join([a["name"] for a in item.get("authors", [])]) if item.get("authors") else "Unknown"
+    release_date = item.get("issued", item.get("published", "N/A"))
+
+    # Description formatting
+    description = f"""
+    {html.escape(desc)}
+
+    👨‍🏫 Author(s): {authors}
+    📅 Released: {release_date}
+    """
+
+    ET.SubElement(entry, "title").text = title
+    ET.SubElement(entry, "link").text = link
+    ET.SubElement(entry, "description").text = description
+
+#    # Add cover image if available
+#    cover_url = item.get("cover")
+#    if cover_url:
+#        image_url = cover_url.rstrip("/") + "/250w.jpg"
+#        ET.SubElement(entry, "enclosure", url=image_url, type="image/jpeg")
+
+    # Use full uncropped image
+    cover_url = item.get("cover")
+    if cover_url:
+        ET.SubElement(entry, "enclosure", url=cover_url, type="image/jpeg")
+
+# 4️⃣ Write feed
+tree = ET.ElementTree(rss)
+tree.write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
+
+print(f"✅ RSS feed '{OUTPUT_FILE}' generated successfully!")
